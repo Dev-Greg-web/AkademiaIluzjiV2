@@ -3,13 +3,29 @@ import json
 import os
 import tempfile
 from app import create_app
-from database import init_db
+from database import init_db, get_db_connection
 from seed import seed_database, DEFAULT_TECHNIQUES
 
+def reset_test_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM session_technique_items")
+    cursor.execute("DELETE FROM technique_problems")
+    cursor.execute("DELETE FROM notes")
+    cursor.execute("DELETE FROM routines")
+    cursor.execute("DELETE FROM training_sessions")
+    cursor.execute("DELETE FROM techniques")
+    cursor.execute("DELETE FROM user_profile")
+    conn.commit()
+    conn.close()
+    seed_database()
+
 class AkademiaIluzjiBackendTests(unittest.TestCase):
-    def setUp(self):
-        self.app = create_app()
-        self.client = self.app.test_client()
+    @classmethod
+    def setUpClass(cls):
+        reset_test_db()
+        cls.app = create_app()
+        cls.client = cls.app.test_client()
 
     def test_01_health_check(self):
         res = self.client.get('/api/health')
@@ -142,6 +158,45 @@ class AkademiaIluzjiBackendTests(unittest.TestCase):
         res_imp = self.client.post('/api/settings/import-json', json=backup)
         self.assertEqual(res_imp.status_code, 200)
         self.assertTrue(res_imp.get_json()["success"])
+
+    def test_10_spa_frontend_serving(self):
+        # 1. Root / should return index.html (200)
+        res_root = self.client.get('/')
+        self.assertEqual(res_root.status_code, 200)
+        self.assertIn(b'<!doctype html>', res_root.data)
+        self.assertIn(b'Akademia Iluzji', res_root.data)
+
+        # 2. SPA client routes should fallback to index.html (200)
+        res_techniques = self.client.get('/techniques')
+        self.assertEqual(res_techniques.status_code, 200)
+        self.assertIn(b'<!doctype html>', res_techniques.data)
+
+        res_training = self.client.get('/training')
+        self.assertEqual(res_training.status_code, 200)
+        self.assertIn(b'<!doctype html>', res_training.data)
+
+        res_context = self.client.get('/context')
+        self.assertEqual(res_context.status_code, 200)
+        self.assertIn(b'<!doctype html>', res_context.data)
+
+        # 3. Static assets should be served
+        res_favicon = self.client.get('/favicon.svg')
+        self.assertEqual(res_favicon.status_code, 200)
+
+    def test_11_api_404_json(self):
+        # Unknown API endpoints MUST return JSON 404 and NOT index.html
+        res_api_404 = self.client.get('/api/unknown-endpoint')
+        self.assertEqual(res_api_404.status_code, 404)
+        data = res_api_404.get_json()
+        self.assertIsNotNone(data)
+        self.assertEqual(data.get("error"), "Endpoint not found")
+
+        # Unknown POST API endpoint
+        res_api_post_404 = self.client.post('/api/unknown-action')
+        self.assertEqual(res_api_post_404.status_code, 404)
+        data_post = res_api_post_404.get_json()
+        self.assertIsNotNone(data_post)
+        self.assertEqual(data_post.get("error"), "Endpoint not found")
 
 if __name__ == '__main__':
     unittest.main()
