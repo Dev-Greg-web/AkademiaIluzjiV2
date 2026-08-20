@@ -1,7 +1,7 @@
 from datetime import datetime, date, timedelta
 from flask import Blueprint, jsonify
 from database import get_db_connection
-from services.xp_system import get_level_info
+from services.xp_system import get_level_info, calculate_track_level
 
 progress_bp = Blueprint('progress', __name__)
 
@@ -13,18 +13,21 @@ def get_progress_summary():
     cursor.execute("SELECT * FROM user_profile WHERE id = 1")
     profile = dict(cursor.fetchone())
     level_info = get_level_info(profile.get('xp', 0))
+    magic_info = calculate_track_level(profile.get('magic_xp', 0))
+    cardistry_info = calculate_track_level(profile.get('cardistry_xp', 0))
+    performance_info = calculate_track_level(profile.get('performance_xp', 0))
 
     cursor.execute("SELECT COUNT(*) FROM techniques")
     total_techs = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM techniques WHERE user_level >= 8")
+    cursor.execute("SELECT COUNT(*) FROM techniques WHERE status IN ('Mastered', 'Mastered+') OR mastery_percentage >= 80")
     mastered_count = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM techniques WHERE user_level >= 1 AND user_level <= 7")
+    cursor.execute("SELECT COUNT(*) FROM techniques WHERE status = 'Practicing' OR (mastery_percentage >= 20 AND mastery_percentage < 80)")
     in_progress_count = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM techniques WHERE user_level = 0")
-    unstarted_count = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM techniques WHERE status = 'Locked'")
+    locked_count = cursor.fetchone()[0]
 
     cursor.execute("SELECT COUNT(*), SUM(CASE WHEN is_resolved = 0 THEN 1 ELSE 0 END) FROM technique_problems")
     prob_row = cursor.fetchone()
@@ -34,25 +37,55 @@ def get_progress_summary():
     cursor.execute("SELECT COUNT(*) FROM routines")
     routines_count = cursor.fetchone()[0]
 
+    cursor.execute("SELECT COUNT(*) FROM achievements a JOIN user_achievements ua ON a.id = ua.achievement_id WHERE ua.unlocked = 1")
+    unlocked_achievements = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM goals WHERE status = 'active'")
+    active_goals = cursor.fetchone()[0]
+
+    cursor.execute("SELECT AVG(rating) FROM training_sessions WHERE rating > 0")
+    avg_rating = round(cursor.fetchone()[0] or 7.0, 1)
+
+    # Strongest & Weakest Category
+    cursor.execute("""
+        SELECT category, AVG(mastery_percentage) as avg_m
+        FROM techniques
+        GROUP BY category
+        ORDER BY avg_m DESC
+    """)
+    cat_rows = cursor.fetchall()
+    strongest_cat = cat_rows[0][0] if cat_rows else "Grips"
+    weakest_cat = cat_rows[-1][0] if cat_rows else "Sleights"
+
     conn.close()
 
     return jsonify({
         "profile": {
             **profile,
-            "level_info": level_info
+            "level_info": level_info,
+            "track_levels": {
+                "magic": magic_info,
+                "cardistry": cardistry_info,
+                "performance": performance_info
+            }
         },
         "techniques": {
             "total": total_techs,
             "mastered": mastered_count,
             "in_progress": in_progress_count,
-            "unstarted": unstarted_count,
+            "locked": locked_count,
             "mastery_rate": round((mastered_count / total_techs * 100), 1) if total_techs > 0 else 0
         },
         "problems": {
             "total": total_problems,
             "unresolved": unresolved_problems
         },
-        "routines_count": routines_count
+        "routines_count": routines_count,
+        "unlocked_achievements": unlocked_achievements,
+        "active_goals": active_goals,
+        "average_score": avg_rating,
+        "strongest_category": strongest_cat,
+        "weakest_category": weakest_cat
     })
 
 
@@ -61,7 +94,6 @@ def get_activity_30_days():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Generate 30 days sequence
     today = date.today()
     start_date = today - timedelta(days=29)
 
@@ -70,7 +102,8 @@ def get_activity_30_days():
                SUM(duration_seconds) as total_seconds,
                SUM(reps_count) as total_reps,
                SUM(xp_earned) as total_xp,
-               COUNT(id) as sessions_count
+               COUNT(id) as sessions_count,
+               AVG(rating) as avg_rating
         FROM training_sessions
         WHERE substr(date, 1, 10) >= ?
         GROUP BY substr(date, 1, 10)
@@ -93,7 +126,8 @@ def get_activity_30_days():
                 "minutes": mins,
                 "reps": item['total_reps'] or 0,
                 "xp": item['total_xp'] or 0,
-                "sessions": item['sessions_count']
+                "sessions": item['sessions_count'],
+                "avg_rating": round(item['avg_rating'] or 7, 1)
             })
         else:
             result.append({
@@ -103,7 +137,8 @@ def get_activity_30_days():
                 "minutes": 0,
                 "reps": 0,
                 "xp": 0,
-                "sessions": 0
+                "sessions": 0,
+                "avg_rating": 0
             })
         curr += timedelta(days=1)
 
@@ -117,11 +152,11 @@ def get_top_trained():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT id, name, category, difficulty, user_level, status, 
-               training_minutes, sessions_count, last_trained_at
+        SELECT id, name, track, category, difficulty, user_level, mastery_percentage, status, 
+               training_minutes, sessions_count, total_reps_count, last_trained_at, avg_score
         FROM techniques
-        WHERE training_minutes > 0 OR sessions_count > 0
-        ORDER BY training_minutes DESC, sessions_count DESC
+        WHERE training_minutes > 0 OR sessions_count > 0 OR total_reps_count > 0
+        ORDER BY training_minutes DESC, total_reps_count DESC
         LIMIT 6
     """)
     rows = cursor.fetchall()
@@ -135,15 +170,15 @@ def get_needs_attention():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT t.id, t.name, t.category, t.difficulty, t.user_level, t.status,
+        SELECT t.id, t.name, t.track, t.category, t.difficulty, t.mastery_percentage, t.status,
                t.training_minutes, t.sessions_count, t.last_trained_at,
                COUNT(p.id) as unresolved_problems,
                GROUP_CONCAT(p.problem_text, ' | ') as problem_notes
         FROM techniques t
         LEFT JOIN technique_problems p ON t.id = p.technique_id AND p.is_resolved = 0
-        WHERE t.user_level < 8
+        WHERE t.status IN ('Started', 'Practicing', 'Unlocked') OR (t.mastery_percentage < 80 AND t.status != 'Locked')
         GROUP BY t.id
-        ORDER BY unresolved_problems DESC, t.user_level ASC, t.sessions_count ASC
+        ORDER BY unresolved_problems DESC, t.mastery_percentage ASC
         LIMIT 6
     """)
     rows = cursor.fetchall()
@@ -157,11 +192,10 @@ def get_categories_breakdown():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT category,
+        SELECT category, track,
                COUNT(id) as total_count,
-               SUM(CASE WHEN user_level >= 8 THEN 1 ELSE 0 END) as mastered_count,
-               SUM(CASE WHEN user_level >= 1 AND user_level <= 7 THEN 1 ELSE 0 END) as in_progress_count,
-               AVG(user_level) as avg_level,
+               SUM(CASE WHEN status IN ('Mastered', 'Mastered+') OR mastery_percentage >= 80 THEN 1 ELSE 0 END) as mastered_count,
+               AVG(mastery_percentage) as avg_mastery,
                SUM(training_minutes) as total_minutes
         FROM techniques
         GROUP BY category
@@ -172,7 +206,7 @@ def get_categories_breakdown():
     categories = []
     for r in rows:
         c_dict = dict(r)
-        c_dict["avg_level"] = round(c_dict["avg_level"] or 0, 1)
+        c_dict["avg_mastery"] = round(c_dict["avg_mastery"] or 0, 1)
         c_dict["mastery_percent"] = round((c_dict["mastered_count"] / c_dict["total_count"] * 100), 1) if c_dict["total_count"] > 0 else 0
         categories.append(c_dict)
 

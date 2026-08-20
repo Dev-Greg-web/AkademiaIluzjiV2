@@ -5,9 +5,14 @@ import Toast from './components/Toast';
 
 import Dashboard from './pages/Dashboard';
 import TechniquesPage from './pages/TechniquesPage';
-import RoutinesPage from './pages/RoutinesPage';
+import CardistryPage from './pages/CardistryPage';
+import PerformancePage from './pages/PerformancePage';
 import TrainingPage from './pages/TrainingPage';
+import QuizzesPage from './pages/QuizzesPage';
 import ProgressPage from './pages/ProgressPage';
+import AchievementsPage from './pages/AchievementsPage';
+import SkillTreePage from './pages/SkillTreePage';
+import RoutinesPage from './pages/RoutinesPage';
 import GptContextPage from './pages/GptContextPage';
 import NotesPage from './pages/NotesPage';
 import SettingsPage from './pages/SettingsPage';
@@ -19,14 +24,24 @@ function MainLayout() {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard />;
-      case 'techniques':
+      case 'magic':
         return <TechniquesPage />;
-      case 'routines':
-        return <RoutinesPage />;
+      case 'cardistry':
+        return <CardistryPage />;
+      case 'performance':
+        return <PerformancePage />;
       case 'training':
         return <TrainingPage />;
+      case 'quizzes':
+        return <QuizzesPage />;
       case 'progress':
         return <ProgressPage />;
+      case 'achievements':
+        return <AchievementsPage />;
+      case 'skill-tree':
+        return <SkillTreePage />;
+      case 'routines':
+        return <RoutinesPage />;
       case 'context':
         return <GptContextPage />;
       case 'notes':
@@ -39,7 +54,7 @@ function MainLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col lg:flex-row antialiased selection:bg-rose-600 selection:text-white">
+    <div className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col lg:flex-row antialiased selection:bg-amber-500 selection:text-black">
       {/* Navigation Sidebar */}
       <Sidebar />
 

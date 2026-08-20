@@ -1,15 +1,19 @@
+import json
 from flask import Blueprint, jsonify, request
 from database import get_db_connection
-from services.xp_system import calculate_status, XP_REWARDS, get_level_info
+from services.xp_system import XP_REWARDS, get_level_info
+from services.mastery_engine import compute_technique_mastery, unlock_eligible_techniques
 
 techniques_bp = Blueprint('techniques', __name__)
 
 @techniques_bp.route('/api/techniques', methods=['GET'])
 def get_techniques():
     search = request.args.get('search', '').strip()
+    track = request.args.get('track', '').strip()
     category = request.args.get('category', '').strip()
     status = request.args.get('status', '').strip()
     difficulty = request.args.get('difficulty', '').strip()
+    level = request.args.get('skill_tree_level')
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -29,6 +33,10 @@ def get_techniques():
         term = f"%{search}%"
         params.extend([term, term, term])
 
+    if track and track != 'all':
+        query += " AND t.track = ?"
+        params.append(track)
+
     if category and category != 'Wszystkie':
         query += " AND t.category = ?"
         params.append(category)
@@ -41,14 +49,75 @@ def get_techniques():
         query += " AND t.difficulty = ?"
         params.append(difficulty)
 
-    query += " GROUP BY t.id ORDER BY t.user_level DESC, t.name ASC"
+    if level:
+        query += " AND t.skill_tree_level = ?"
+        params.append(int(level))
+
+    query += " GROUP BY t.id ORDER BY t.skill_tree_level ASC, t.mastery_percentage DESC, t.name ASC"
 
     cursor.execute(query, params)
     rows = cursor.fetchall()
-    results = [dict(r) for r in rows]
+    
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["prerequisites"] = json.loads(d.get("prerequisites_json") or "[]")
+        except Exception:
+            d["prerequisites"] = []
+        try:
+            d["unlocks"] = json.loads(d.get("unlocks_json") or "[]")
+        except Exception:
+            d["unlocks"] = []
+        try:
+            d["master_requirements"] = json.loads(d.get("master_requirements_json") or "{}")
+        except Exception:
+            d["master_requirements"] = {}
+        results.append(d)
 
     conn.close()
     return jsonify(results)
+
+
+@techniques_bp.route('/api/techniques/skill-tree', methods=['GET'])
+def get_skill_tree():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT t.*,
+               SUM(CASE WHEN p.is_resolved = 0 THEN 1 ELSE 0 END) as unresolved_problems_count
+        FROM techniques t
+        LEFT JOIN technique_problems p ON t.id = p.technique_id
+        GROUP BY t.id
+        ORDER BY t.skill_tree_level ASC, t.name ASC
+    """)
+    rows = cursor.fetchall()
+
+    tree_by_levels = {}
+    for r in rows:
+        d = dict(r)
+        lvl = d.get("skill_tree_level", 1)
+        try:
+            d["prerequisites"] = json.loads(d.get("prerequisites_json") or "[]")
+        except Exception:
+            d["prerequisites"] = []
+        try:
+            d["unlocks"] = json.loads(d.get("unlocks_json") or "[]")
+        except Exception:
+            d["unlocks"] = []
+
+        if lvl not in tree_by_levels:
+            tree_by_levels[lvl] = []
+        tree_by_levels[lvl].append(d)
+
+    conn.close()
+    return jsonify({
+        "levels": [
+            {"level": lvl, "title": f"Poziom {lvl}", "techniques": techs}
+            for lvl, techs in sorted(tree_by_levels.items())
+        ]
+    })
 
 
 @techniques_bp.route('/api/techniques/<int:tech_id>', methods=['GET'])
@@ -63,25 +132,35 @@ def get_technique(tech_id):
         return jsonify({"error": "Technika nie znaleziona"}), 404
 
     tech_dict = dict(tech_row)
+    try:
+        tech_dict["prerequisites"] = json.loads(tech_dict.get("prerequisites_json") or "[]")
+    except Exception:
+        tech_dict["prerequisites"] = []
+    try:
+        tech_dict["unlocks"] = json.loads(tech_dict.get("unlocks_json") or "[]")
+    except Exception:
+        tech_dict["unlocks"] = []
+    try:
+        tech_dict["master_requirements"] = json.loads(tech_dict.get("master_requirements_json") or "{}")
+    except Exception:
+        tech_dict["master_requirements"] = {}
 
-    # Fetch problems
-    cursor.execute("""
-        SELECT * FROM technique_problems 
-        WHERE technique_id = ? 
-        ORDER BY is_resolved ASC, created_at DESC
-    """, (tech_id,))
-    problems = [dict(r) for r in cursor.fetchall()]
-    tech_dict["problems"] = problems
+    # Problems
+    cursor.execute("SELECT * FROM technique_problems WHERE technique_id = ? ORDER BY is_resolved ASC, priority DESC", (tech_id,))
+    tech_dict["problems"] = [dict(r) for r in cursor.fetchall()]
 
-    # Fetch recent training sessions mentioning this technique
+    # Video recordings
+    cursor.execute("SELECT id, title, stage_tag, notes, created_at FROM video_recordings WHERE technique_id = ? ORDER BY created_at DESC", (tech_id,))
+    tech_dict["videos"] = [dict(r) for r in cursor.fetchall()]
+
+    # Recent training sessions
     cursor.execute("""
         SELECT s.* FROM training_sessions s
         WHERE s.technique_ids LIKE ?
         ORDER BY s.date DESC
         LIMIT 10
     """, (f"%{tech_id}%",))
-    sessions = [dict(r) for r in cursor.fetchall()]
-    tech_dict["recent_sessions"] = sessions
+    tech_dict["recent_sessions"] = [dict(r) for r in cursor.fetchall()]
 
     conn.close()
     return jsonify(tech_dict)
@@ -91,107 +170,150 @@ def get_technique(tech_id):
 def create_technique():
     data = request.get_json() or {}
     name = data.get('name', '').strip()
-    category = data.get('category', 'Fundamenty')
+    track = data.get('track', 'magic')
+    category = data.get('category', 'Sleights')
     difficulty = data.get('difficulty', 'Beginner')
     description = data.get('description', '')
     notes = data.get('notes', '')
-    user_level = int(data.get('user_level', 0))
+    skill_tree_level = int(data.get('skill_tree_level', 1))
 
     if not name:
         return jsonify({"error": "Nazwa techniki jest wymagana"}), 400
-
-    status = calculate_status(user_level)
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
         cursor.execute("""
-            INSERT INTO techniques (name, category, difficulty, user_level, status, description, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (name, category, difficulty, user_level, status, description, notes))
+            INSERT INTO techniques (
+                name, track, category, difficulty, status, description, notes, 
+                skill_tree_level, prerequisites_json, unlocks_json, master_requirements_json
+            )
+            VALUES (?, ?, ?, ?, 'Unlocked', ?, ?, ?, '[]', '[]', '{}')
+        """, (name, track, category, difficulty, description, notes, skill_tree_level))
         tech_id = cursor.lastrowid
         conn.commit()
 
         cursor.execute("SELECT * FROM techniques WHERE id = ?", (tech_id,))
-        created_tech = dict(cursor.fetchone())
-        created_tech["problems"] = []
+        created = dict(cursor.fetchone())
+        created["problems"] = []
         conn.close()
-        return jsonify(created_tech), 201
+        return jsonify(created), 201
     except Exception as e:
         conn.close()
-        return jsonify({"error": f"Błąd tworzenia techniki (np. duplikat nazwy): {str(e)}"}), 400
+        return jsonify({"error": f"Błąd tworzenia techniki: {str(e)}"}), 400
 
 
-@techniques_bp.route('/api/techniques/<int:tech_id>', methods=['PUT'])
-def update_technique(tech_id):
+@techniques_bp.route('/api/techniques/<int:tech_id>/master-checklist', methods=['PATCH'])
+def update_master_checklist(tech_id):
     data = request.get_json() or {}
+    key = data.get('key')
+    value = bool(data.get('value', True))
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM techniques WHERE id = ?", (tech_id,))
-    existing = cursor.fetchone()
-    if not existing:
+    row = cursor.fetchone()
+    if not row:
         conn.close()
         return jsonify({"error": "Technika nie znaleziona"}), 404
 
-    name = data.get('name', existing['name'])
-    category = data.get('category', existing['category'])
-    difficulty = data.get('difficulty', existing['difficulty'])
-    description = data.get('description', existing['description'])
-    notes = data.get('notes', existing['notes'])
-    user_level = int(data.get('user_level', existing['user_level']))
-    status = calculate_status(user_level)
+    t = dict(row)
+    try:
+        reqs = json.loads(t.get("master_requirements_json") or "{}")
+    except Exception:
+        reqs = {}
+
+    if key:
+        reqs[key] = value
+
+    # Recalculate mastery
+    cursor.execute("SELECT COUNT(*) FROM technique_problems WHERE technique_id = ? AND is_resolved = 0", (tech_id,))
+    unresolved_probs = cursor.fetchone()[0]
+
+    mastery, new_status, updated_reqs = compute_technique_mastery(
+        training_minutes=t.get("training_minutes", 0),
+        sessions_count=t.get("sessions_count", 0),
+        total_reps=t.get("total_reps_count", 0),
+        avg_score=t.get("avg_score", 0),
+        unresolved_problems_count=unresolved_probs,
+        last_trained_at_str=t.get("last_trained_at"),
+        master_reqs=reqs,
+        current_status=t.get("status", "Unlocked")
+    )
 
     cursor.execute("""
-        UPDATE techniques 
-        SET name = ?, category = ?, difficulty = ?, user_level = ?, status = ?, 
-            description = ?, notes = ?, updated_at = datetime('now', 'localtime')
+        UPDATE techniques
+        SET mastery_percentage = ?,
+            status = ?,
+            master_requirements_json = ?,
+            updated_at = datetime('now', 'localtime')
         WHERE id = ?
-    """, (name, category, difficulty, user_level, status, description, notes, tech_id))
+    """, (mastery, new_status, json.dumps(updated_reqs), tech_id))
+
+    # Check unlocks
+    unlocked_names = unlock_eligible_techniques(cursor)
 
     conn.commit()
+
     cursor.execute("SELECT * FROM techniques WHERE id = ?", (tech_id,))
     updated_tech = dict(cursor.fetchone())
+    updated_tech["master_requirements"] = updated_reqs
     conn.close()
-    return jsonify(updated_tech)
+
+    return jsonify({
+        "technique": updated_tech,
+        "mastery_percentage": mastery,
+        "status": new_status,
+        "unlocked_techniques": unlocked_names
+    })
 
 
-@techniques_bp.route('/api/techniques/<int:tech_id>/level', methods=['PATCH'])
-def update_technique_level(tech_id):
+@techniques_bp.route('/api/techniques/<int:tech_id>/mastery', methods=['PATCH'])
+def update_technique_mastery(tech_id):
     data = request.get_json() or {}
-    new_level = int(data.get('user_level', 0))
-    new_level = max(0, min(10, new_level))
-    new_status = calculate_status(new_level)
+    new_mastery = max(0, min(100, int(data.get('mastery_percentage', 0))))
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT user_level, name FROM techniques WHERE id = ?", (tech_id,))
+    cursor.execute("SELECT * FROM techniques WHERE id = ?", (tech_id,))
     tech = cursor.fetchone()
     if not tech:
         conn.close()
         return jsonify({"error": "Technika nie znaleziona"}), 404
 
-    old_level = tech['user_level']
+    old_mastery = tech['mastery_percentage'] or 0
+    
+    if new_mastery >= 90:
+        new_status = "Mastered+"
+    elif new_mastery >= 75:
+        new_status = "Mastered"
+    elif new_mastery >= 25:
+        new_status = "Practicing"
+    elif new_mastery > 0:
+        new_status = "Started"
+    else:
+        new_status = "Unlocked" if tech['status'] != 'Locked' else 'Locked'
+
     cursor.execute("""
         UPDATE techniques 
-        SET user_level = ?, status = ?, updated_at = datetime('now', 'localtime')
+        SET mastery_percentage = ?,
+            user_level = ?,
+            status = ?,
+            updated_at = datetime('now', 'localtime')
         WHERE id = ?
-    """, (new_level, new_status, tech_id))
+    """, (new_mastery, max(0, min(10, round(new_mastery / 10))), new_status, tech_id))
 
     xp_gained = 0
-    if new_level > old_level:
-        level_diff = new_level - old_level
-        xp_gained = level_diff * XP_REWARDS["TECHNIQUE_LEVEL_UP"]
-        if new_level >= 8 and old_level < 8:
-            xp_gained += XP_REWARDS["TECHNIQUE_MASTERED"]
-
+    if new_mastery >= 80 and old_mastery < 80:
+        xp_gained = XP_REWARDS["TECHNIQUE_MASTERED"]
         cursor.execute("UPDATE user_profile SET xp = xp + ?, updated_at = datetime('now', 'localtime') WHERE id = 1", (xp_gained,))
 
+    unlocked_names = unlock_eligible_techniques(cursor)
     conn.commit()
 
-    # Get updated profile
     cursor.execute("SELECT xp FROM user_profile WHERE id = 1")
     user_xp = cursor.fetchone()[0]
     level_info = get_level_info(user_xp)
@@ -203,27 +325,20 @@ def update_technique_level(tech_id):
     return jsonify({
         "technique": updated_tech,
         "xp_gained": xp_gained,
-        "user_xp": user_xp,
-        "level_info": level_info
+        "level_info": level_info,
+        "unlocked_techniques": unlocked_names
     })
 
 
-@techniques_bp.route('/api/techniques/<int:tech_id>', methods=['DELETE'])
-def delete_technique(tech_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM techniques WHERE id = ?", (tech_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": True, "message": "Technika usunięta"})
-
-
-# --- PROBLEMS SUB-ROUTES ---
+# --- PROBLEMS ---
 
 @techniques_bp.route('/api/techniques/<int:tech_id>/problems', methods=['POST'])
 def add_problem(tech_id):
     data = request.get_json() or {}
     problem_text = data.get('problem_text', '').strip()
+    priority = data.get('priority', 'Medium')
+    problem_tag = data.get('problem_tag', 'Tension')
+
     if not problem_text:
         return jsonify({"error": "Treść problemu jest wymagana"}), 400
 
@@ -231,13 +346,13 @@ def add_problem(tech_id):
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO technique_problems (technique_id, problem_text, is_resolved)
-        VALUES (?, ?, 0)
-    """, (tech_id, problem_text))
-    problem_id = cursor.lastrowid
+        INSERT INTO technique_problems (technique_id, priority, problem_tag, problem_text, is_resolved)
+        VALUES (?, ?, ?, ?, 0)
+    """, (tech_id, priority, problem_tag, problem_text))
+    prob_id = cursor.lastrowid
     conn.commit()
 
-    cursor.execute("SELECT * FROM technique_problems WHERE id = ?", (problem_id,))
+    cursor.execute("SELECT * FROM technique_problems WHERE id = ?", (prob_id,))
     problem = dict(cursor.fetchone())
     conn.close()
     return jsonify(problem), 201
@@ -257,12 +372,13 @@ def update_problem(problem_id):
 
     is_resolved = data.get('is_resolved', existing['is_resolved'])
     problem_text = data.get('problem_text', existing['problem_text'])
+    priority = data.get('priority', existing['priority'])
 
     cursor.execute("""
         UPDATE technique_problems 
-        SET problem_text = ?, is_resolved = ?
+        SET problem_text = ?, priority = ?, is_resolved = ?
         WHERE id = ?
-    """, (problem_text, 1 if is_resolved else 0, problem_id))
+    """, (problem_text, priority, 1 if is_resolved else 0, problem_id))
 
     xp_gained = 0
     if is_resolved and not existing['is_resolved']:
@@ -271,13 +387,10 @@ def update_problem(problem_id):
 
     conn.commit()
     cursor.execute("SELECT * FROM technique_problems WHERE id = ?", (problem_id,))
-    problem = dict(cursor.fetchone())
+    prob = dict(cursor.fetchone())
     conn.close()
 
-    return jsonify({
-        "problem": problem,
-        "xp_gained": xp_gained
-    })
+    return jsonify({"problem": prob, "xp_gained": xp_gained})
 
 
 @techniques_bp.route('/api/problems/<int:problem_id>', methods=['DELETE'])

@@ -1,38 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
+import { useApp } from '../context/AppContext';
 import NoteModal from '../components/NoteModal';
-import { 
-  StickyNote, 
-  Plus, 
-  Search, 
-  Edit3, 
-  Trash2, 
-  Tag, 
-  Calendar,
-  Layers
-} from 'lucide-react';
-
-const NOTE_CATEGORIES = ['Wszystkie', 'Ogólne', 'Teoria', 'Technika', 'Rutyna', 'Trening'];
 
 export default function NotesPage() {
   const { showToast } = useApp();
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedNote, setSelectedNote] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('Wszystkie');
-  const [search, setSearch] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingNote, setEditingNote] = useState(null);
+
+  const categories = ['Wszystkie', 'Ogólne', 'Teoria', 'Technika', 'Rutyna', 'Psychologia'];
 
   const fetchNotes = async () => {
     try {
       setLoading(true);
       const data = await api.getNotes({
-        category: selectedCategory
+        category: selectedCategory === 'Wszystkie' ? '' : selectedCategory
       });
       setNotes(data);
     } catch (err) {
-      showToast('Błąd pobierania notatek', 'error');
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -42,158 +31,115 @@ export default function NotesPage() {
     fetchNotes();
   }, [selectedCategory]);
 
-  const handleCreateNew = () => {
-    setEditingNote(null);
-    setModalOpen(true);
-  };
-
-  const handleEdit = (note) => {
-    setEditingNote(note);
-    setModalOpen(true);
-  };
-
-  const handleDelete = async (id) => {
+  const handleDelete = async (noteId, e) => {
+    e.stopPropagation();
     if (!window.confirm('Czy na pewno chcesz usunąć tę notatkę?')) return;
     try {
-      await api.deleteNote(id);
+      await api.deleteNote(noteId);
       showToast('Usunięto notatkę', 'info');
       fetchNotes();
     } catch (err) {
-      showToast('Błąd usuwania notatki', 'error');
+      showToast('Błąd usuwania: ' + err.message, 'error');
     }
   };
 
-  const filteredNotes = notes.filter((n) => {
-    if (!search) return true;
-    const term = search.toLowerCase();
-    return (
-      n.title?.toLowerCase().includes(term) ||
-      n.content?.toLowerCase().includes(term) ||
-      n.category?.toLowerCase().includes(term)
-    );
-  });
-
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
+      
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-            📝 Notatki & Baza Wiedzy
-          </h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            Zapisuj przemyślenia, teorie psychologiczne, zasady misdirection i patter
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-2xl">📝</span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">NOTATKI & BAZA WIEDZY</h1>
+          </div>
+          <p className="text-zinc-300 text-xs sm:text-sm">
+            Własne spostrzeżenia, skrypty narracji, pomysły na rutyny i odkrycia z treningów.
           </p>
         </div>
 
         <button
-          onClick={handleCreateNew}
-          className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-rose-950/40 transition active:scale-95 shrink-0"
+          onClick={() => setShowCreateModal(true)}
+          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-extrabold text-xs rounded-xl shadow-md transition-all self-start sm:self-auto"
         >
-          <Plus className="w-4 h-4" />
-          Dodaj notatkę
+          + Dodaj Nową Notatkę
         </button>
       </div>
 
-      {/* Toolbar */}
-      <div className="p-4 rounded-2xl bg-[#12131b] border border-zinc-800 space-y-3">
-        <div className="relative">
-          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Szukaj w notatkach..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-rose-500 transition"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {NOTE_CATEGORIES.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                selectedCategory === cat
-                  ? 'bg-rose-600 text-white shadow-md'
-                  : 'bg-zinc-900/80 text-zinc-400 hover:text-white border border-zinc-800'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
+      {/* Categories Chips */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs font-semibold">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            className={`px-3.5 py-1.5 rounded-xl whitespace-nowrap transition-all ${
+              selectedCategory === cat
+                ? 'bg-amber-500 text-black font-extrabold shadow-sm'
+                : 'bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-750'
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
       </div>
 
       {/* Notes Grid */}
-      {loading ? (
-        <div className="py-20 text-center space-y-3">
-          <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-zinc-400">Ładowanie notatek...</p>
-        </div>
-      ) : filteredNotes.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl bg-[#12131b] border border-zinc-800 space-y-3">
-          <StickyNote className="w-12 h-12 text-zinc-400 mx-auto" />
-          <h3 className="text-base font-bold text-white">Brak notatek</h3>
-          <p className="text-xs text-zinc-400">Dodaj swoje pierwsze notatki i przemyślenia!</p>
-        </div>
-      ) : (
+      {notes.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredNotes.map((note) => (
+          {notes.map((n) => (
             <div
-              key={note.id}
-              className="p-5 rounded-2xl bg-[#12131b] border border-zinc-800 hover:border-zinc-700 transition flex flex-col justify-between space-y-3 shadow-lg group"
+              key={n.id}
+              onClick={() => setSelectedNote(n)}
+              className="bg-[#12131c] hover:bg-[#161726] border border-zinc-800 hover:border-amber-500/40 p-5 rounded-2xl cursor-pointer transition-all duration-200 flex flex-col justify-between group shadow-sm"
             >
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800">
-                    {note.category}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                    {n.category || 'Ogólne'}
                   </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleEdit(note)}
-                      className="p-1.5 text-zinc-400 hover:text-white rounded transition"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(note.id)}
-                      className="p-1.5 text-zinc-400 hover:text-rose-400 rounded transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={(e) => handleDelete(n.id, e)}
+                    className="text-zinc-500 hover:text-rose-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    🗑️
+                  </button>
                 </div>
 
-                <h3 className="text-base font-bold text-white group-hover:text-rose-400 transition">
-                  {note.title}
+                <h3 className="text-base font-bold text-white group-hover:text-amber-300 transition-colors mb-2">
+                  {n.title || 'Bez tytułu'}
                 </h3>
 
-                <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                  {note.content}
+                <p className="text-xs text-zinc-300 line-clamp-4 leading-relaxed whitespace-pre-wrap">
+                  {n.content}
                 </p>
               </div>
 
-              <div className="pt-2 border-t border-zinc-800/80 text-[10px] font-mono text-zinc-400 flex items-center justify-between">
-                <span>{note.updated_at?.slice(0, 10)}</span>
-                {note.technique_name && (
-                  <span className="text-rose-400 truncate max-w-[120px]">
-                    chwyt: {note.technique_name}
-                  </span>
-                )}
+              <div className="pt-3 border-t border-zinc-850 text-[10px] text-zinc-300 mt-4 flex items-center justify-between">
+                <span>{n.created_at?.slice(0, 16)}</span>
+                <span className="text-amber-400 font-semibold group-hover:underline">Edytuj →</span>
               </div>
             </div>
           ))}
         </div>
+      ) : (
+        <div className="p-12 text-center bg-[#12131c] border border-zinc-800 rounded-2xl">
+          <p className="text-sm font-semibold text-zinc-300">Brak notatek w tej kategorii.</p>
+        </div>
       )}
 
       {/* Note Modal */}
-      <NoteModal
-        isOpen={modalOpen}
-        note={editingNote}
-        onClose={() => setModalOpen(false)}
-        onSaved={fetchNotes}
-      />
+      {(selectedNote || showCreateModal) && (
+        <NoteModal
+          note={selectedNote}
+          isOpen={!!selectedNote || showCreateModal}
+          onClose={() => {
+            setSelectedNote(null);
+            setShowCreateModal(false);
+          }}
+          onSaved={fetchNotes}
+        />
+      )}
+
     </div>
   );
 }

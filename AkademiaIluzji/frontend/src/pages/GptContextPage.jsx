@@ -1,250 +1,144 @@
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
-import { 
-  BrainCircuit, 
-  Copy, 
-  Check, 
-  Download, 
-  Sparkles, 
-  FileText, 
-  Dumbbell, 
-  Zap, 
-  HelpCircle,
-  Layers,
-  ArrowRight
-} from 'lucide-react';
-
-const CONTEXT_MODES = [
-  {
-    id: 'quick',
-    label: 'Szybki kontekst',
-    icon: Zap,
-    desc: 'Zwięzły profil, poziom, aktywne błędy i cele. Idealny do szybkich pytań o technikę.'
-  },
-  {
-    id: 'full',
-    label: 'Pełny kontekst',
-    icon: FileText,
-    desc: 'Kompletny rejestr opanowanych chwytów, rutyn, historii sesji i szczegółowych problemów.'
-  },
-  {
-    id: 'training',
-    label: 'Kontekst treningowy',
-    icon: Dumbbell,
-    desc: 'Skupiony na biomechanice, analizie trudności z ostatnich sesji i generowaniu mikro-drills.'
-  },
-  {
-    id: 'trick',
-    label: 'Kontekst do nauki sztuczki',
-    icon: Sparkles,
-    desc: 'Zestawienie opanowanych technik do doboru pasujących, klasycznych i nowoczesnych rutyn.'
-  }
-];
+import { useApp } from '../context/AppContext';
 
 export default function GptContextPage() {
   const { showToast } = useApp();
-  const [activeMode, setActiveMode] = useState('quick');
+  const [selectedType, setSelectedType] = useState('quick');
   const [contextData, setContextData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const fetchContext = async (mode) => {
+  const contextTypes = [
+    { id: 'quick', title: 'Szybki Kontekst', desc: 'Poziom, cele, główne błędy i stan opanowania' },
+    { id: 'full', title: 'Kompletny Raport Coacha', desc: 'Pełny arsenał chwytów, rutyny i głęboka biomechanika' },
+    { id: 'training', title: 'Trening & Spaced Repetition', desc: 'Analiza technik wymagających powtórki i plan mikro-drills' },
+    { id: 'trick', title: 'Dobór Nowej Sztuczki', desc: 'Propozycja rutyn pasujących ściśle do znanych chwytów' },
+    { id: 'performance_review', title: 'Recenzja Występu & Patter', desc: 'Udoskonalenie skryptu narracji i psychologii misdirection' }
+  ];
+
+  const fetchContext = async (type) => {
     try {
       setLoading(true);
-      const data = await api.getContext(mode);
-      setContextData(data);
+      const res = await api.getContext(type);
+      setContextData(res);
     } catch (err) {
-      showToast('Błąd generowania kontekstu GPT', 'error');
+      showToast('Błąd pobierania kontekstu: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchContext(activeMode);
-  }, [activeMode]);
+    fetchContext(selectedType);
+  }, [selectedType]);
 
   const handleCopy = async () => {
     if (!contextData?.context_text) return;
     try {
       await navigator.clipboard.writeText(contextData.context_text);
       setCopied(true);
-      showToast('📋 Skopiowano kontekst do schowka! Wklej go do ChatGPT.', 'success');
+      showToast('Skopiowano kontekst dla ChatGPT do schowka!', 'success');
       setTimeout(() => setCopied(false), 3000);
     } catch (err) {
-      // Fallback
-      const textArea = document.createElement('textarea');
-      textArea.value = contextData.context_text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setCopied(true);
-      showToast('📋 Skopiowano kontekst do schowka!', 'success');
-      setTimeout(() => setCopied(false), 3000);
+      showToast('Błąd kopiowania: ' + err.message, 'error');
     }
   };
 
-  const handleExportTxt = async () => {
+  const handleDownloadTxt = async () => {
     try {
-      await api.exportContextTxt(activeMode);
-      showToast('💾 Wyeksportowano plik .TXT z kontekstem', 'info');
+      await api.exportContextTxt(selectedType);
+      showToast('Pobrano plik tekstowy z promptem!', 'success');
     } catch (err) {
-      showToast('Błąd pobierania pliku .txt', 'error');
+      showToast('Błąd pobierania: ' + err.message, 'error');
     }
   };
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
+      
       {/* Header */}
-      <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-950/40 border border-rose-800/40 text-rose-300 text-xs font-semibold">
-          <BrainCircuit className="w-4 h-4 text-rose-400" />
-          Kluczowa Funkcja • 100% Offline & Bezpieczne
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-2xl">🤖</span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">GENERATOR PROMPTÓW DLA CHATGPT</h1>
+          </div>
+          <p className="text-zinc-300 text-xs sm:text-sm">
+            Generuj ustrukturyzowany kontekst ze swoimi realnymi danymi treningowymi. Skopiuj i wklej do ChatGPT.
+          </p>
         </div>
-        <h1 className="text-3xl font-extrabold text-white tracking-tight">
-          🧠 Generator Kontekstu dla ChatGPT
-        </h1>
-        <p className="text-sm text-zinc-300 leading-relaxed max-w-3xl">
-          Akademia Iluzji <strong>nie potrzebuje API AI ani kluczy</strong>. Wygeneruj poniżej inteligentnie skondensowany kontekst swojej wiedzy, chwytów i problemów, a następnie wklej go ręcznie do ChatGPT jako mentora.
-        </p>
+
+        {/* Offline Privacy Guarantee Badge */}
+        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-2 rounded-2xl text-xs text-emerald-300">
+          <span>🔒</span>
+          <span>100% Prywatności — Zero API AI</span>
+        </div>
       </div>
 
-      {/* 4 Mode Selection Tabs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {CONTEXT_MODES.map((mode) => {
-          const Icon = mode.icon;
-          const isSelected = activeMode === mode.id;
-
-          return (
-            <button
-              key={mode.id}
-              onClick={() => setActiveMode(mode.id)}
-              className={`p-4 rounded-2xl text-left border transition-all duration-200 flex flex-col justify-between space-y-3 group ${
-                isSelected
-                  ? 'bg-rose-950/40 border-rose-600 shadow-xl shadow-rose-950/30 ring-1 ring-rose-500/50'
-                  : 'bg-[#12131b] border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className={`p-2.5 rounded-xl border ${
-                  isSelected 
-                    ? 'bg-rose-600 text-white border-rose-500 shadow-md' 
-                    : 'bg-zinc-900 text-zinc-400 border-zinc-800 group-hover:text-white'
-                }`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                {isSelected && (
-                  <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
-                )}
-              </div>
-
-              <div>
-                <h3 className={`font-bold text-sm tracking-tight ${
-                  isSelected ? 'text-white' : 'text-zinc-200 group-hover:text-white'
-                }`}>
-                  {mode.label}
-                </h3>
-                <p className="text-[11px] text-zinc-400 leading-normal mt-1">
-                  {mode.desc}
-                </p>
-              </div>
-            </button>
-          );
-        })}
+      {/* Mode Selector Chips */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        {contextTypes.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setSelectedType(t.id)}
+            className={`p-3.5 rounded-2xl border text-left transition-all ${
+              selectedType === t.id
+                ? 'bg-amber-500/15 border-amber-500/60 text-white shadow-md'
+                : 'bg-[#12131c] border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+            }`}
+          >
+            <p className="font-bold text-xs text-zinc-200 mb-1">{t.title}</p>
+            <p className="text-[10px] text-zinc-300 leading-snug line-clamp-2">{t.desc}</p>
+          </button>
+        ))}
       </div>
 
-      {/* Main Preview Container */}
-      <div className="p-6 rounded-3xl bg-[#12131b] border border-zinc-800 shadow-2xl space-y-4">
-        {/* Toolbar above preview */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-zinc-800">
+      {/* Main Prompt Card */}
+      <div className="bg-[#12131c] border border-zinc-800 rounded-3xl p-6 space-y-4 shadow-xl">
+        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4">
           <div>
-            <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-              {contextData?.title || 'Podgląd Kontekstu'}
-            </h3>
-            <p className="text-xs text-zinc-400 font-mono mt-0.5">
-              {contextData?.char_count || 0} znaków • {contextData?.lines_count || 0} linii tekstu
+            <h3 className="font-bold text-base text-white">{contextData?.title || 'Generowanie kontekstu...'}</h3>
+            <p className="text-xs text-zinc-300">
+              {contextData?.lines_count || 0} linii • {contextData?.char_count || 0} znaków
             </p>
           </div>
 
           <div className="flex items-center gap-2.5">
             <button
-              onClick={handleExportTxt}
-              className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-xl text-xs font-bold border border-zinc-700/80 flex items-center gap-2 transition active:scale-95"
+              onClick={handleDownloadTxt}
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold text-xs rounded-xl border border-zinc-700 transition-all flex items-center gap-1.5"
             >
-              <Download className="w-4 h-4" />
-              💾 Eksportuj .TXT
+              <span>💾</span>
+              <span>Pobierz .txt</span>
             </button>
 
             <button
               onClick={handleCopy}
-              className={`px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg transition-all duration-200 active:scale-95 ${
+              className={`px-6 py-2.5 rounded-xl font-extrabold text-xs shadow-lg transition-all flex items-center gap-2 ${
                 copied
-                  ? 'bg-emerald-600 text-white shadow-emerald-950/40'
-                  : 'bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white shadow-rose-950/40'
+                  ? 'bg-emerald-500 text-black'
+                  : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 text-black'
               }`}
             >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  Skopiowano!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  📋 KOPIUJ DO CHATGPT
-                </>
-              )}
+              <span>{copied ? '✓' : '📋'}</span>
+              <span>{copied ? 'SKOPIOWANO!' : 'KOPIUJ KONTEKST'}</span>
             </button>
           </div>
         </div>
 
-        {/* Text Preview Box */}
-        <div className="relative">
-          {loading ? (
-            <div className="py-24 text-center space-y-3">
-              <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-sm text-zinc-400">Generowanie zoptymalizowanego kontekstu...</p>
-            </div>
-          ) : (
-            <pre className="w-full bg-[#0a0a0f] text-zinc-200 font-mono text-xs p-5 rounded-2xl border border-zinc-800/80 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[480px] select-all">
-              {contextData?.context_text}
-            </pre>
-          )}
+        {/* Text Area */}
+        <div className="bg-black/60 border border-zinc-800/90 rounded-2xl p-5 font-mono text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed max-h-[55vh] overflow-y-auto custom-scrollbar select-all">
+          {loading ? 'Generowanie lokalnego raportu...' : contextData?.context_text}
         </div>
+
+        <p className="text-[11px] text-zinc-300 italic text-center">
+          Wskazówka: Po skopiowaniu, otwórz ChatGPT i wklej tekst za pomocą <kbd className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-300">Ctrl + V</kbd>.
+        </p>
+
       </div>
 
-      {/* Guide: How to best use this with ChatGPT */}
-      <div className="p-6 rounded-3xl bg-zinc-900/40 border border-zinc-800/80 space-y-4">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
-          <HelpCircle className="w-4 h-4 text-amber-400" />
-          Jak osiągnąć najlepsze rezultaty z ChatGPT?
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-zinc-400 leading-relaxed">
-          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/60 space-y-1.5">
-            <span className="font-bold text-white text-sm flex items-center gap-1.5">
-              1. Skopiuj kontekst
-            </span>
-            <p>Kliknij przycisk „📋 KOPIUJ DO CHATGPT” w wybranym trybie (np. Treningowy lub Pełny).</p>
-          </div>
-
-          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/60 space-y-1.5">
-            <span className="font-bold text-white text-sm flex items-center gap-1.5">
-              2. Wklej na start czatu
-            </span>
-            <p>Rozpocznij nowy czat w ChatGPT i wklej powyższy tekst jako pierwszą wiadomość.</p>
-          </div>
-
-          <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/60 space-y-1.5">
-            <span className="font-bold text-white text-sm flex items-center gap-1.5">
-              3. Pytaj o szczegóły
-            </span>
-            <p>Zadaj pytanie np.: „Zaproponuj mi 3 ćwiczenia korygujące mój problem z Double Liftem”.</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

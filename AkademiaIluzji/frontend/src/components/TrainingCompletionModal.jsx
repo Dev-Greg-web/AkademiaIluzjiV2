@@ -1,210 +1,310 @@
 import React, { useState } from 'react';
-import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
-import { Sparkles, Trophy, Star, CheckCircle, Clock, RotateCw, X } from 'lucide-react';
+import { useApp } from '../context/AppContext';
 
-export default function TrainingCompletionModal({ 
-  isOpen, 
-  onClose, 
-  durationSeconds, 
-  repsCount, 
-  techniqueIds,
-  workoutTitle,
-  onSessionSaved 
-}) {
+export default function TrainingCompletionModal({ isOpen, sessionData, onClose, onSaved }) {
   const { showToast, fireConfetti, refreshProfile } = useApp();
   const [rating, setRating] = useState(8);
-  const [reps, setReps] = useState(repsCount || 30);
+  const [scoreControl, setScoreControl] = useState(8);
+  const [scoreNaturalness, setScoreNaturalness] = useState(7);
+  const [scoreTiming, setScoreTiming] = useState(8);
+  const [scoreConfidence, setScoreConfidence] = useState(8);
+  const [scorePresentation, setScorePresentation] = useState(7);
+
   const [whatWentWell, setWhatWentWell] = useState('');
   const [whatWasProblem, setWhatWasProblem] = useState('');
   const [whatToImprove, setWhatToImprove] = useState('');
+  const [hardestPart, setHardestPart] = useState('');
+  const [selectedTags, setSelectedTags] = useState([]);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // ChatGPT Context after session
+  const [gptPrompt, setGptPrompt] = useState('');
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+
   if (!isOpen) return null;
 
-  const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
+  const quickTags = ['Tension', 'Timing', 'Grip', 'Naturalness', 'Angles', 'Consistency', 'Confidence'];
 
-  const handleSubmit = async (e) => {
+  const toggleTag = (tag) => {
+    if (selectedTags.includes(tag)) {
+      setSelectedTags(selectedTags.filter(t => t !== tag));
+    } else {
+      setSelectedTags([...selectedTags, tag]);
+    }
+  };
+
+  const handleFinish = async (e) => {
     e.preventDefault();
+    setSaving(true);
     try {
-      setSaving(true);
       const payload = {
-        duration_seconds: durationSeconds,
-        reps_count: reps,
-        rating: rating,
-        what_went_well: whatWentWell.trim(),
-        what_was_problem: whatWasProblem.trim(),
-        what_to_improve: whatToImprove.trim(),
-        notes: notes.trim(),
-        technique_ids: techniqueIds || []
+        duration_seconds: sessionData?.durationSeconds || 600,
+        reps_count: sessionData?.repsCount || 0,
+        rating,
+        score_control: scoreControl,
+        score_naturalness: scoreNaturalness,
+        score_timing: scoreTiming,
+        score_confidence: scoreConfidence,
+        score_presentation: scorePresentation,
+        what_went_well: whatWentWell,
+        what_was_problem: whatWasProblem,
+        what_to_improve: whatToImprove,
+        hardest_part: hardestPart,
+        problem_tags: selectedTags,
+        notes,
+        technique_ids: sessionData?.techniqueIds || [],
+        session_type: sessionData?.sessionType || 'daily_plan'
       };
 
       const res = await api.finishTraining(payload);
       fireConfetti();
-      showToast(`Trening zapisany! Zdobyłeś +${res.xp_earned} XP! 🔥 Streak: ${res.new_streak} dni`, 'success', res.xp_earned);
+      showToast(`Trening zapisany! +${res.xp_earned} XP | Streak: ${res.new_streak} dni!`, 'success', res.xp_earned);
+      
+      // Auto-generate session prompt
+      const gptRes = await api.getContext('session_review', res.session);
+      setGptPrompt(gptRes.context_text);
+
       refreshProfile();
-      if (onSessionSaved) onSessionSaved(res.session);
-      onClose();
+      onSaved && onSaved(res);
     } catch (err) {
-      showToast('Błąd zapisu sesji treningowej', 'error');
+      showToast('Błąd zapisu sesji: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  const handleCopyGpt = async () => {
+    try {
+      await navigator.clipboard.writeText(gptPrompt);
+      setCopiedPrompt(true);
+      showToast('Skopiowano recenzję sesji dla ChatGPT!', 'success');
+      setTimeout(() => setCopiedPrompt(false), 3000);
+    } catch (err) {
+      showToast('Błąd kopiowania: ' + err.message, 'error');
+    }
+  };
+
+  const durationMin = Math.round((sessionData?.durationSeconds || 0) / 60);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
-      <div className="bg-[#111219] border border-zinc-800 w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-[#12131c] border border-zinc-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in duration-200">
+        
         {/* Header */}
-        <div className="p-6 border-b border-zinc-800/80 bg-gradient-to-b from-[#1c141d] to-[#12131b] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-600 flex items-center justify-center text-white shadow-xl shadow-rose-950/40">
-              <Trophy className="w-6 h-6 text-amber-200" />
-            </div>
+        <div className="p-5 border-b border-zinc-800 bg-[#0d0e15] flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl">🏆</span>
             <div>
-              <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                Trening Ukończony!
-                <Sparkles className="w-4 h-4 text-amber-400" />
-              </h2>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                {workoutTitle || 'Sesja treningowa'} • {durationMinutes} min • {reps} powtórzeń
+              <h3 className="font-extrabold text-base text-white tracking-wide">PODSUMOWANIE TRENINGU</h3>
+              <p className="text-xs text-zinc-300">
+                Czas: <strong className="text-amber-400">{durationMin} min</strong> • Powtórzenia: <strong className="text-amber-400">{sessionData?.repsCount || 0}</strong>
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white p-1 rounded-lg">
-            <X className="w-5 h-5" />
+          
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-full bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold"
+          >
+            ✕
           </button>
         </div>
 
-        {/* Body Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Summary Stat Cards */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center gap-3">
-              <Clock className="w-5 h-5 text-rose-400" />
-              <div>
-                <p className="text-[11px] text-zinc-400">Czas sesji</p>
-                <p className="text-base font-bold text-white font-mono">{durationMinutes} min</p>
+        {!gptPrompt ? (
+          <form onSubmit={handleFinish} className="p-6 space-y-5 max-h-[75vh] overflow-y-auto custom-scrollbar">
+            
+            {/* Main Score Slider */}
+            <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-extrabold text-zinc-200 uppercase tracking-wider">
+                  OGÓLNA SAMOOCENA SESJI:
+                </label>
+                <span className="text-lg font-black text-amber-400">{rating} / 10</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={rating}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setRating(v);
+                  setScoreControl(v);
+                  setScoreNaturalness(v);
+                  setScoreTiming(v);
+                  setScoreConfidence(v);
+                  setScorePresentation(v);
+                }}
+                className="w-full accent-amber-500 cursor-pointer"
+              />
+            </div>
+
+            {/* 5 Dimensional Radar Sliders */}
+            <div className="space-y-3 p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800">
+              <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">OCENA 5 WYMIARÓW WYKONANIA:</h4>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <div className="flex justify-between text-zinc-300 mb-1">
+                    <span>Kontrola i chwyt (Control):</span>
+                    <strong className="text-amber-400">{scoreControl}/10</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={scoreControl}
+                    onChange={(e) => setScoreControl(parseInt(e.target.value))}
+                    className="w-full accent-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-zinc-300 mb-1">
+                    <span>Naturalność (Naturalness):</span>
+                    <strong className="text-amber-400">{scoreNaturalness}/10</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={scoreNaturalness}
+                    onChange={(e) => setScoreNaturalness(parseInt(e.target.value))}
+                    className="w-full accent-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-zinc-300 mb-1">
+                    <span>Timing i tempo (Timing):</span>
+                    <strong className="text-amber-400">{scoreTiming}/10</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={scoreTiming}
+                    onChange={(e) => setScoreTiming(parseInt(e.target.value))}
+                    className="w-full accent-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-zinc-300 mb-1">
+                    <span>Pewność siebie (Confidence):</span>
+                    <strong className="text-amber-400">{scoreConfidence}/10</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={scoreConfidence}
+                    onChange={(e) => setScoreConfidence(parseInt(e.target.value))}
+                    className="w-full accent-amber-500"
+                  />
+                </div>
               </div>
             </div>
-            <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center gap-3">
-              <RotateCw className="w-5 h-5 text-amber-400" />
-              <div className="flex-1">
-                <p className="text-[11px] text-zinc-400">Liczba powtórzeń</p>
-                <input
-                  type="number"
-                  min="1"
-                  max="1000"
-                  value={reps}
-                  onChange={(e) => setReps(Number(e.target.value))}
-                  className="bg-transparent font-bold text-base text-white font-mono w-full focus:outline-none"
-                />
+
+            {/* Problem Tags */}
+            <div>
+              <label className="text-[10px] text-zinc-300 font-bold uppercase block mb-1.5">
+                Szybkie tagi trudności / błędów do skorygowania:
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {quickTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag(tag)}
+                    className={`px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${
+                      selectedTags.includes(tag)
+                        ? 'bg-rose-500/20 border-rose-500 text-rose-300 font-bold shadow-sm'
+                        : 'bg-zinc-850 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    [{tag}]
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
 
-          {/* Rating 1-10 */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Ocena własna z sesji:
-              </label>
-              <span className="text-sm font-bold text-amber-400 font-mono flex items-center gap-1">
-                <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                {rating}/10
-              </span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              value={rating}
-              onChange={(e) => setRating(Number(e.target.value))}
-              className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
-            />
-            <div className="flex justify-between text-[10px] text-zinc-400 font-mono px-1">
-              <span>1 (Słabo / Spadek formy)</span>
-              <span>5 (Poprawnie)</span>
-              <span>10 (Perfekcyjne czucie kart)</span>
-            </div>
-          </div>
-
-          {/* Reflection fields */}
-          <div className="space-y-3.5">
+            {/* Hardest Part Input */}
             <div>
-              <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                ✨ Co poszło dobrze?
+              <label className="text-[10px] text-zinc-300 font-bold uppercase block mb-1">
+                Co było najtrudniejsze podczas tej sesji?
               </label>
               <input
                 type="text"
-                value={whatWentWell}
-                onChange={(e) => setWhatWentWell(e.target.value)}
-                placeholder="Np. Płynny obrót kart, brak dźwięku kliknięcia, zrelaksowana dłoń..."
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-rose-500 transition"
+                value={hardestPart}
+                onChange={(e) => setHardestPart(e.target.value)}
+                placeholder="np. Sztywność małego palca przy obrocie..."
+                className="w-full bg-zinc-900 border border-zinc-750 rounded-xl px-3.5 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none"
               />
             </div>
 
+            {/* What went well / Reflections */}
             <div>
-              <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                ⚠️ Co było problemem lub przeszkodą?
-              </label>
-              <input
-                type="text"
-                value={whatWasProblem}
-                onChange={(e) => setWhatWasProblem(e.target.value)}
-                placeholder="Np. Kciuk za mocno dociskał górną krawędź przy get-ready..."
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-amber-500 transition"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                🎯 Co poprawić następnym razem?
-              </label>
-              <input
-                type="text"
-                value={whatToImprove}
-                onChange={(e) => setWhatToImprove(e.target.value)}
-                placeholder="Np. Robić 10 powtórzeń w zwolnionym tempie przed lustrem..."
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-emerald-500 transition"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                📝 Dodatkowa notatka treningowa
+              <label className="text-[10px] text-zinc-300 font-bold uppercase block mb-1">
+                Wnioski i refleksje:
               </label>
               <textarea
+                value={whatWentWell}
+                onChange={(e) => setWhatWentWell(e.target.value)}
+                placeholder="Co poszło świetnie? Jaki element jest już w pamięci mięśniowej?"
                 rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Opcjonalne uwagi lub wnioski do zapamiętania..."
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-white placeholder-zinc-400 focus:outline-none focus:border-rose-500 transition"
+                className="w-full bg-zinc-900 border border-zinc-750 rounded-xl p-3 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none"
               />
             </div>
-          </div>
-
-          {/* Footer Submit */}
-          <div className="pt-3 border-t border-zinc-800 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition"
-            >
-              Odrzuć
-            </button>
 
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-emerald-950/40 transition active:scale-95 disabled:opacity-50"
+              className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-600 text-black font-extrabold text-xs rounded-xl shadow-lg transition-all"
             >
-              <CheckCircle className="w-4 h-4" />
-              {saving ? 'Zapisywanie...' : 'Zapisz sesję i odbierz XP'}
+              {saving ? 'Zapisywanie...' : 'Zapisz Sesję i Zaktualizuj Statystyki →'}
+            </button>
+
+          </form>
+        ) : (
+          /* Post-Submission Success Screen with ChatGPT Context Copy */
+          <div className="p-6 space-y-5">
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl">✓</span>
+                <div>
+                  <h4 className="font-bold text-sm">Sesja została pomyślnie zapisana!</h4>
+                  <p className="text-xs text-emerald-200/80">Statystyki, mastery i streak zostały zaktualizowane.</p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleCopyGpt}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                  copiedPrompt
+                    ? 'bg-emerald-500 text-black border-emerald-400'
+                    : 'bg-zinc-800 text-zinc-200 border-zinc-700 hover:text-white'
+                }`}
+              >
+                {copiedPrompt ? '✓ Skopiowano!' : '🤖 Kopiuj Prompt dla ChatGPT'}
+              </button>
+            </div>
+
+            <div className="bg-black/60 border border-zinc-800 rounded-2xl p-4 font-mono text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto custom-scrollbar select-all">
+              {gptPrompt}
+            </div>
+
+            <button
+              onClick={onClose}
+              className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs rounded-xl transition-all"
+            >
+              Zakończ i wróć do Aplikacji
             </button>
           </div>
-        </form>
+        )}
+
       </div>
     </div>
   );

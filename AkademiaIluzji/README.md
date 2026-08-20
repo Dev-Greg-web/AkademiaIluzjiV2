@@ -1,8 +1,8 @@
-# 🃏 Akademia Iluzji — Osobisty System Treningu Magii Karcianej
+# 🃏 CARD MAGIC COACH — Akademia Iluzji 2.0
 
-**Akademia Iluzji** to kompletna, nowoczesna aplikacja webowa zaprojektowana do nauki, monitorowania i codziennego treningu sztuki iluzji karcianej (*sleight of hand*).
+**CARD MAGIC COACH** to kompletny, prywatny system do nauki, monitorowania i codziennego treningu sztuki iluzji karcianej (*sleight of hand*), Cardistry i prezentacji scenicznej (*Performance*).
 
-System działa w 100% lokalnie (**offline-first**), bez konieczności połączenia z chmurą, bez zewnętrznych API AI i bez subskrypcji. Zawiera unikalny moduł **GPT Context**, który inteligentnie podsumowuje Twój profil i pozwala skopiować gotowy, wysokiej jakości prompt bezpośrednio do ChatGPT.
+Aplikacja działa w 100% lokalnie (**offline-first**), bez konieczności połączenia z chmurą, bez zewnętrznych API AI (zero OpenAI/Gemini/Anthropic keys) i bez subskrypcji. Wszystkie rekomendacje, poziomy, spaced repetition i quizy są oparte na **logice deterministycznej**.
 
 ---
 
@@ -39,115 +39,63 @@ Frontend uruchomi się pod adresem: `http://localhost:5173`
 
 ---
 
-## 🛠️ Architektura i Struktura Projektu
+## 🌟 Główne Moduły CARD MAGIC COACH
 
-```text
-AkademiaIluzji/
-├── backend/
-│   ├── database/
-│   │   └── akademia.db             # Plik bazy SQLite
-│   ├── routes/
-│   │   ├── api_profile.py          # Profil, cele, ranga, streak
-│   │   ├── api_techniques.py       # Baza chwytów, poziomy 0-10, rejestr problemów
-│   │   ├── api_training.py         # Stoper, zapisywanie sesji, generator treningu
-│   │   ├── api_routines.py         # Tworzenie i edycja rutyn
-│   │   ├── api_progress.py         # Analityka, wykres 30 dni, kategorie
-│   │   ├── api_context.py          # Generator promptów dla ChatGPT
-│   │   ├── api_notes.py            # Notatki i teoria
-│   │   └── api_settings.py         # Eksport/Import JSON, reset bazy
-│   ├── services/
-│   │   ├── xp_system.py            # Poziomy 1-10, XP, kalkulator streaku
-│   │   ├── training_engine.py      # Algorytm doboru sesji 15/30/45/60 min
-│   │   └── context_generator.py    # 4 tryby kondensacji danych dla ChatGPT
-│   ├── app.py                      # Główny plik Flask (CORS, Blueprints)
-│   ├── database.py                 # Inicjalizacja SQLite i schemat tabel
-│   ├── seed.py                     # Domyślny zestaw 23 technik karcianych
-│   └── test_backend.py             # Automatyczne testy integracyjne
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Sidebar.jsx         # Nawigacja, ranga, pasek XP, wskaźnik Streak
-│   │   │   ├── LevelBadge.jsx      # Wizualna odznaka poziomu (0-10)
-│   │   │   ├── TechniqueModal.jsx  # Szczegóły techniki, suwak poziomu, problemy
-│   │   │   ├── TrainingGeneratorModal.jsx # Generator planu 15-60 min
-│   │   │   ├── TrainingCompletionModal.jsx # Podsumowanie sesji, ocena 1-10, XP
-│   │   │   ├── RoutineModal.jsx    # Kreator sekwencji rutyny i patteru
-│   │   │   ├── NoteModal.jsx       # Edytor notatek
-│   │   │   └── Toast.jsx           # Globalne powiadomienia i nagrody XP
-│   │   ├── context/
-│   │   │   └── AppContext.jsx      # Globalny stan profilu, treningu i konfetti
-│   │   ├── pages/
-│   │   │   ├── Dashboard.jsx       # Pulpit główny, „DZISIAJ ĆWICZYSZ”, statystyki
-│   │   │   ├── TechniquesPage.jsx  # Baza chwytów, filtry, wyszukiwarka
-│   │   │   ├── RoutinesPage.jsx    # Lista i trening rutyn
-│   │   │   ├── TrainingPage.jsx    # Aktywny stoper, licznik powtórzeń, historia
-│   │   │   ├── ProgressPage.jsx    # Wykres 30 dni, słabe punkty, kategorie
-│   │   │   ├── GptContextPage.jsx  # Flagowy generator promptów do schowka
-│   │   │   ├── NotesPage.jsx       # Baza wiedzy i notatki
-│   │   │   └── SettingsPage.jsx    # Profil, backup JSON, reset bazy
-│   │   ├── services/
-│   │   │   └── api.js              # Klient HTTP do backendu
-│   │   ├── App.jsx                 # Główny router i layout
-│   │   ├── index.css               # Tailwind CSS 4, motyw Dark & Card Red
-│   │   └── main.jsx
-│   ├── package.json
-│   └── vite.config.js              # Konfiguracja Vite + proxy API
-│
-├── start_app.bat                   # 1-klikowy launcher Windows
-├── start_backend.bat               # Launcher backendu
-└── start_frontend.bat              # Launcher frontendu
-```
+### 1. 🏠 Dashboard („Co mam dzisiaj ćwiczyć?”)
+- **Cześć, [imię] 👋** — Twój trening na dziś jest gotowy.
+- **Paski 3 Ścieżek Rozwoju**: *Magic Lvl*, *Cardistry Lvl*, *Performance Lvl*.
+- **DZISIEJSZY TRENING**: Dostosowany deterministycznie plan (5, 10, 15, 20, 30, 45, 60 min) z podziałem na fazy, celem powtórzeń i czasem.
+- **TWÓJ NASTĘPNY KROK**: Wyróżniona, pojedyncza najważniejsza akcja z jasnym uzasadnieniem (np. *„Przećwicz Double Lift przez 10 minut: Wyeliminuj napięcie kciuka”*).
+- **Wymagające Powtórki (Spaced Repetition)**: Wykrywa techniki tracące świeżość w pamięci mięśniowej.
+- **Szybki generator promptów dla ChatGPT**: Kopiowanie kontekstu profilu 1-klikiem.
 
----
+### 2. 🃏 Trzy Główne Ścieżki
+- **🃏 MAGIC**: Grips, Controls, Forces, Counts, Changes, False Cuts, False Shuffles, Palming, Sleights, Theory.
+- **♠️ CARDISTRY**: Cuts, Fans, Spreads, Packets, Flourishes, Combos, Displays, Advanced Moves.
+- **🎭 PERFORMANCE**: Timing, Misdirection, Patter, Audience Management, Eye Contact, Body Language, Confidence, Presentation, Pacing, Scripting.
 
-## 🌟 Główne Funkcje
+### 3. 🗺️ Interaktywny Skill Tree
+- Drzewo umiejętności od **Level 1** do **Level 5+**.
+- Statusy: *Locked* 🔒, *Unlocked* 🔓, *Started* 🟡, *Practicing* 🔵, *Mastered* 🟢, *Mastered+* ⭐.
+- Dynamiczne odblokowywanie chwytów po spełnieniu wymagań wstępnych (*prerequisites*).
 
-### 1. 🏠 Dashboard („Dzisiaj ćwiczysz”)
-- Wyraźna sekcja natychmiastowego startu z wyliczonym optymalnym ćwiczeniem na dany dzień.
-- 4 karty KPI: Aktualny poziom (Level 1–10), Punkty Doświadczenia (XP), Płonący Streak (🔥 dni z rzędu), Łączny czas treningu.
-- Szybki skrót do Generatora treningu (15, 30, 45, 60 min).
-- Rejestr ostatnio trenowanych chwytów i aktualny cel.
+### 4. 🎯 Distraction-Free Studio Treningowe
+- Duży stoper na żywo (Start, Pauza, Wznowienie, Reset, +1 Min).
+- Licznik powtórzeń `[ - ] [ + ]` z celem i komunikatem `✅ TARGET COMPLETE`.
+- Wskazówka i fokus do bieżącego ćwiczenia oraz podgląd kolejnego etapu.
+- **Wielowymiarowa samoocena**:
+  - Ocena ogólna (1–10).
+  - Wymiary: *Control*, *Naturalness*, *Timing*, *Confidence*, *Presentation* (1–10).
+  - Szybkie tagi błędów: `[Tension]`, `[Timing]`, `[Grip]`, `[Naturalness]`, `[Angles]`, `[Consistency]`, `[Confidence]`.
+  - Generowanie promptu recenzji sesji do ChatGPT.
 
-### 2. 🃏 Baza Technik (23 domyślne chwyty + własne)
-- Domyślny seed podzielony na:
-  - **Beginner**: *Mechanics Grip, Overhand Shuffle, Hindu Shuffle, Riffle Shuffle, Swing Cut, Charlier Cut, Basic Fan*.
-  - **Intermediate**: *Double Lift, Double Undercut, Key Card, Riffle Force, Classic Force, Elmsley Count, False Cut, False Shuffle, Card Control*.
-  - **Advanced**: *Pass, Classic Palm, Top Change, Second Deal, Bottom Deal, Multiple Shift, Advanced Card Control*.
-- Filtrowanie po 10 kategoriach (*Fundamenty, Controls, Forces, False Cuts, False Shuffles, Counts, Sleights, Cardistry, Flourishes, Performance*).
-- Zmiana poziomu opanowania w skali **0/10 → 10/10** (odblokowuje XP i nagrody za mistrzostwo).
-- Rejestr indywidualnych problemów technicznych (np. „karty rozjeżdżają się przy obrocie”).
+### 5. 🧠 Quizy Wiedzy i Biomechaniki
+- Pytania jedno/wielokrotnego wyboru oraz prawda/fałsz.
+- Sprawdzanie zasad biomechaniki, kątów, ułożenia palców i psychologii misdirection.
+- Wyjaśnienia merytoryczne i nagrody XP (+20 XP, +35 XP za 100%).
 
-### 3. 🏋️ Centrum Treningowe (Stoper & Rejestrator)
-- Interaktywny stoper z opcją pauzy, wznawiania i resetu.
-- Licznik powtórzeń z szybkimi przyciskami `+1`, `+5`, `+10`.
-- Formularz podsumowania sesji (ocena 1–10, co poszło dobrze, co było problemem, wnioski do poprawy).
-- Automatyczne naliczanie XP, aktualizacja streaku i historii sesji z animacją konfetti.
+### 6. 🏆 System Osiągnięć (15 Odznak)
+- Osiągnięcia w kategoriach: Trening, Mistrzostwo, Streak, Cardistry, Performance, Quizy.
+- Śledzenie postępu powtórzeń, minut, ukończonych rutyn i streaku.
 
-### 4. 🧠 GPT Context (Kluczowa Funkcja Offline AI)
-- Aplikacja **nie łączy się z zewnętrznymi serwerami AI**.
-- Dostępne 4 dedykowane tryby promptów:
-  1. ⚡ **Szybki kontekst** — zwięzły profil do szybkich pytań.
-  2. 📜 **Pełny kontekst** — kompleksowy raport ze statystykami, technikami i rutynami.
-  3. 🏋️ **Kontekst treningowy** — biomechanika, analiza ostatnich błędów i propozycje ćwiczeń (drills).
-  4. 🎭 **Kontekst do nauki sztuczki** — dopasowanie nowych rutyn pod opanowany zestaw chwytów.
-- Przycisk **„📋 KOPIUJ DO CHATGPT”** z natychmiastowym potwierdzeniem.
-- Przycisk **„💾 EKSPORTUJ .TXT”** do zapisu pliku tekstowego.
+### 7. 🎪 Deterministyczny Generator Rutyn & Master Routines
+- Analizuje znane chwyty i grupuje klasyczne rutyny (*Ambitious Card*, *Triumph*, *Oil & Water*, *Chicago Opener*, *Two Card Monte*) na:
+  - **100% Gotowe do pokazu**
+  - **Brakuje tylko 1 chwytu** (wskazuje dokładnie jaki sleight należy wyćwiczyć)
+  - **W dalszym planie rozwoju**
 
-### 5. 🎭 Rutyny i Patter
-- Tworzenie sekwencji chwytów w spójną całość.
-- Edycja efektu dla widza, skryptu narracji (patter) i poziomu trudności.
-- Wbudowana szablonowa „Moja pierwsza rutyna — Ambitious Card Mini”.
+### 8. 🎭 Warsztat Performance & Rejestr Występów
+- 8 Filarów Prezentacji Scenicznej.
+- Formularz rejestracji pokazów na żywo z checklistą sceniczną (Patter, Timing, Misdirection, Kontakt wzrokowy, Mowa ciała, Pewność siebie, Puenta, Reset).
 
-### 6. 📊 Postęp i Analityka
-- Wykres aktywności treningowej z ostatnich 30 dni.
-- Najczęściej trenowane techniki vs. techniki wymagające największej uwagi.
-- Procentowy wskaźnik opanowania poszczególnych kategorii.
-
-### 7. ⚙️ Ustawienia i Pełny Backup JSON
-- Eksport całej bazy danych (profile, techniki, sesje, rutyny, notatki) do pliku `.json`.
-- Import i przywracanie stanu bazy z pliku `.json`.
-- Opcja bezpiecznego resetu bazy do stanu początkowego.
+### 9. 🤖 Generator Promptów dla ChatGPT
+- 5 dedykowanych trybów:
+  1. ⚡ **Szybki kontekst** — zwięzły profil do codziennych pytań.
+  2. 📜 **Pełny raport Coacha** — kompletny arsenał chwytów, rutyny i biomechanika.
+  3. 🏋️ **Kontekst treningowy** — Spaced Repetition, analiza błędów i propozycje mikro-drills.
+  4. 🎭 **Dobór nowej sztuczki** — dopasowanie nowych rutyn pod opanowany zestaw chwytów.
+  5. 🎬 **Recenzja występu & Patter** — doskonalenie narracji i misdirection.
+- Przycisk **„📋 KOPIUJ KONTEKST”** oraz eksport do pliku `.txt`.
 
 ---
 
@@ -158,12 +106,4 @@ Backend posiada pełen zestaw testów jednostkowych i integracyjnych:
 cd backend
 .\venv\Scripts\python test_backend.py
 ```
-Wszystkie 9 testów weryfikuje poprawność inicjalizacji SQLite, poziomy XP, stoper, algorytm generatora, eksport kontekstu GPT oraz import/eksport JSON.
-
----
-
-## 🔮 Sugerowane Następne Kroki Rozwoju
-
-1. **Wideo / Nagrania wideo**: Dodanie możliwości podpięcia kamery internetowej bezpośrednio w zakładce Treningu (do auto-nagrywania powtórzeń i analizy kątów w zwolnionym tempie).
-2. **Karty / Talia Wirtualna**: Generator losowych kart z talii do ćwiczenia podglądów, kontroli i wymuszeń na czas.
-3. **Dźwiękowy metronom**: Opcjonalny rytmizator powtórzeń (np. do ćwiczenia równego rytmu w Elmsley Count lub tasowaniu).
+Wszystkie 11 testów weryfikuje poprawność schematu SQLite, poziomy XP 1–20, Spaced Repetition, generator rutyn, quizy, osiągnięcia, kontekst ChatGPT oraz serwowanie SPA.

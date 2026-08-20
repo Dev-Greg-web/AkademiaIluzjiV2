@@ -1,219 +1,268 @@
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
+import { useApp } from '../context/AppContext';
 import RoutineModal from '../components/RoutineModal';
-import { 
-  Sparkles, 
-  Plus, 
-  Play, 
-  Edit3, 
-  Trash2, 
-  Layers, 
-  MessageSquare, 
-  FileText,
-  Eye
-} from 'lucide-react';
 
 export default function RoutinesPage() {
-  const { startQuickTraining, showToast } = useApp();
+  const { showToast, fireConfetti, setSelectedTechniqueId, setActiveTab } = useApp();
   const [routines, setRoutines] = useState([]);
+  const [generatorData, setGeneratorData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingRoutine, setEditingRoutine] = useState(null);
+  const [selectedRoutine, setSelectedRoutine] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [activeView, setActiveView] = useState('generator'); // 'generator' | 'all'
+  const [selectedEffect, setSelectedEffect] = useState('all');
 
-  const fetchRoutines = async () => {
+  const effects = [
+    { id: 'all', label: 'Wszystkie Efekty' },
+    { id: 'ambitious', label: 'Karta Ambitna' },
+    { id: 'transposition', label: 'Transpozycja' },
+    { id: 'separation', label: 'Separacja (Oliwa & Woda)' },
+    { id: 'location', label: 'Lokalizacja / Tryumf' },
+    { id: 'color_change', label: 'Zmiana Koloru' }
+  ];
+
+  const fetchRoutinesData = async () => {
     try {
       setLoading(true);
-      const data = await api.getRoutines();
-      setRoutines(data);
+      const [allRoutines, genResult] = await Promise.all([
+        api.getRoutines(),
+        api.getGeneratedRoutines(selectedEffect, 'all')
+      ]);
+      setRoutines(allRoutines);
+      setGeneratorData(genResult);
     } catch (err) {
-      showToast('Błąd pobierania rutyn', 'error');
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchRoutines();
-  }, []);
-
-  const handleCreateNew = () => {
-    setEditingRoutine(null);
-    setModalOpen(true);
-  };
-
-  const handleEdit = (r) => {
-    setEditingRoutine(r);
-    setModalOpen(true);
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć tę rutynę?')) return;
-    try {
-      await api.deleteRoutine(id);
-      showToast('Usunięto rutynę', 'info');
-      fetchRoutines();
-    } catch (err) {
-      showToast('Błąd usuwania rutyny', 'error');
-    }
-  };
-
-  const handlePracticeRoutine = (r) => {
-    startQuickTraining({
-      technique_name: r.name,
-      duration_minutes: 25,
-      target_reps: 15,
-      focus_note: `Trening pełnej rutyny: ${r.effect || r.name}. Zwróć uwagę na płynność przejść i skrypt narracji.`
-    });
-  };
+    fetchRoutinesData();
+  }, [selectedEffect]);
 
   return (
-    <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-200">
+      
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-6">
         <div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-            🎭 Moje Rutyny Magiczne
-          </h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            Projektuj kompletne sekwencje trików, rozwijaj patter (narrację) i szlifuj prezentację sceniczną
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-2xl">🎪</span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">RUTYNY & GENERATOR</h1>
+          </div>
+          <p className="text-zinc-300 text-xs sm:text-sm">
+            Klasyczne i autorskie sekwencje karciane. Dopasowane deterministycznie do opanowanego arsenału.
           </p>
         </div>
 
         <button
-          onClick={handleCreateNew}
-          className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-rose-950/40 transition active:scale-95 shrink-0"
+          onClick={() => setShowCreateModal(true)}
+          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-extrabold text-xs rounded-xl shadow-md transition-all self-start sm:self-auto"
         >
-          <Plus className="w-4 h-4" />
-          Stwórz nową rutynę
+          + Stwórz Własną Rutynę
         </button>
       </div>
 
-      {/* Routines Grid */}
-      {loading ? (
-        <div className="py-20 text-center space-y-3">
-          <div className="w-8 h-8 border-2 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-zinc-400">Ładowanie rutyn...</p>
+      {/* View Switcher & Effect Filters */}
+      <div className="bg-[#12131c] border border-zinc-800 rounded-2xl p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveView('generator')}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                activeView === 'generator'
+                  ? 'bg-amber-500 text-black shadow-md'
+                  : 'bg-zinc-850 text-zinc-400 hover:text-white'
+              }`}
+            >
+              ⚡ Dopasowane do Twoich Chwytów
+            </button>
+            <button
+              onClick={() => setActiveView('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                activeView === 'all'
+                  ? 'bg-amber-500 text-black shadow-md'
+                  : 'bg-zinc-850 text-zinc-400 hover:text-white'
+              }`}
+            >
+              📚 Cały Repertuar ({routines.length})
+            </button>
+          </div>
+
+          <select
+            value={selectedEffect}
+            onChange={(e) => setSelectedEffect(e.target.value)}
+            className="bg-zinc-900 border border-zinc-750 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none"
+          >
+            {effects.map(eff => (
+              <option key={eff.id} value={eff.id}>{eff.label}</option>
+            ))}
+          </select>
         </div>
-      ) : routines.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl bg-[#12131b] border border-zinc-800 space-y-3">
-          <Sparkles className="w-12 h-12 text-zinc-400 mx-auto" />
-          <h3 className="text-base font-bold text-white">Brak stworzonych rutyn</h3>
-          <p className="text-xs text-zinc-400">Kliknij przycisk powyżej, aby stworzyć swoją pierwszą kompletną sekwencję!</p>
+      </div>
+
+      {/* VIEW 1: DETERMINISTIC MATCHING ROUTINES */}
+      {activeView === 'generator' && generatorData && (
+        <div className="space-y-8">
+          
+          {/* Section A: 100% Ready */}
+          {generatorData.ready?.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🟢</span>
+                <h3 className="text-lg font-bold text-white">Gotowe do Wykonania (100% Znanych Chwytów)</h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {generatorData.ready.map((r) => (
+                  <div
+                    key={r.id}
+                    onClick={() => setSelectedRoutine(r)}
+                    className="bg-[#121b15] border border-emerald-500/40 hover:border-emerald-400 p-5 rounded-2xl cursor-pointer transition-all shadow-md flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-extrabold text-emerald-300 bg-emerald-500/20 px-2.5 py-0.5 rounded border border-emerald-500/40">
+                          100% GOTOWA
+                        </span>
+                        <span className="text-xs font-bold text-zinc-400">{r.difficulty}</span>
+                      </div>
+
+                      <h4 className="text-base font-bold text-white mb-1.5">{r.name}</h4>
+                      <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed mb-3">{r.effect}</p>
+                    </div>
+
+                    <div className="pt-3 border-t border-zinc-800 flex items-center justify-between text-xs">
+                      <span className="text-zinc-400">Chwyty: {r.techniques?.join(', ')}</span>
+                      <span className="text-emerald-400 font-bold">Otwórz scenariusz →</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Section B: 1 Move Away */}
+          {generatorData.one_move_away?.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🟡</span>
+                <h3 className="text-lg font-bold text-white">Brakuje Tylko 1 Chwytu (Nearly Ready)</h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {generatorData.one_move_away.map((r) => (
+                  <div
+                    key={r.id}
+                    onClick={() => setSelectedRoutine(r)}
+                    className="bg-[#181712] border border-amber-500/40 hover:border-amber-400 p-5 rounded-2xl cursor-pointer transition-all shadow-md flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-extrabold text-amber-300 bg-amber-500/20 px-2.5 py-0.5 rounded border border-amber-500/40">
+                          {r.status_label}
+                        </span>
+                        <span className="text-xs font-bold text-zinc-400">{r.difficulty}</span>
+                      </div>
+
+                      <h4 className="text-base font-bold text-white mb-1.5">{r.name}</h4>
+                      <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed mb-3">{r.effect}</p>
+                    </div>
+
+                    <div className="pt-3 border-t border-zinc-800 flex items-center justify-between text-xs">
+                      <span className="text-amber-200/90 font-semibold">
+                        Opanuj: {r.missing_techniques?.[0]?.name}
+                      </span>
+                      <span className="text-amber-400 font-bold">Szczegóły →</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Section C: In Development */}
+          {generatorData.locked?.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🔒</span>
+                <h3 className="text-base font-bold text-zinc-400">W Dalszym Planie Rozwoju (2+ chwyty do opanowania)</h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {generatorData.locked.map((r) => (
+                  <div
+                    key={r.id}
+                    onClick={() => setSelectedRoutine(r)}
+                    className="bg-[#12131c] border border-zinc-800/80 p-4 rounded-2xl cursor-pointer opacity-70 hover:opacity-100 transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <span className="text-[10px] text-zinc-300 font-bold block mb-1">{r.difficulty}</span>
+                      <h4 className="text-sm font-bold text-zinc-200 mb-1">{r.name}</h4>
+                      <p className="text-[11px] text-zinc-300 line-clamp-2">{r.effect}</p>
+                    </div>
+                    <span className="text-[10px] text-zinc-300 font-semibold block mt-3">
+                      Wymaga: {r.missing_techniques?.map(m => m.name).join(', ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      )}
+
+      {/* VIEW 2: ALL ROUTINES */}
+      {activeView === 'all' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {routines.map((r) => (
             <div
               key={r.id}
-              className="p-6 rounded-3xl bg-[#12131b] border border-zinc-800 hover:border-zinc-700 transition flex flex-col justify-between space-y-5 shadow-xl group"
+              onClick={() => setSelectedRoutine(r)}
+              className="bg-[#12131c] border border-zinc-800 hover:border-amber-500/40 p-5 rounded-2xl cursor-pointer transition-all shadow-sm flex flex-col justify-between group"
             >
-              <div className="space-y-4">
-                {/* Title & Badges */}
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-rose-950/50 text-rose-300 border border-rose-800/40 font-mono">
-                      {r.difficulty || 'Intermediate'}
-                    </span>
-                    <h3 className="text-xl font-bold text-white group-hover:text-rose-400 transition tracking-tight mt-1.5">
-                      {r.name}
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleEdit(r)}
-                      className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition"
-                      title="Edytuj rutynę"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(r.id)}
-                      className="p-2 text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 rounded-lg transition"
-                      title="Usuń rutynę"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                    {r.effect_type || 'Klasyk'}
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-400">{r.difficulty}</span>
                 </div>
 
-                {/* Effect */}
-                {r.effect && (
-                  <div className="p-3.5 rounded-xl bg-zinc-900/90 border border-zinc-800 text-xs space-y-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1">
-                      <Eye className="w-3 h-3" />
-                      Efekt dla widza:
-                    </span>
-                    <p className="text-zinc-200 leading-relaxed font-medium">
-                      {r.effect}
-                    </p>
-                  </div>
-                )}
+                <h3 className="text-base font-bold text-white group-hover:text-amber-300 transition-colors mb-1.5">
+                  {r.name}
+                </h3>
 
-                {/* Techniques Flow Steps */}
-                {r.techniques && r.techniques.length > 0 && (
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
-                      <Layers className="w-3 h-3 text-sky-400" />
-                      Sekwencja chwytów:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {r.techniques.map((tName, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-900 text-zinc-200 border border-zinc-700/80"
-                        >
-                          <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[10px] font-mono flex items-center justify-center font-bold">
-                            {idx + 1}
-                          </span>
-                          {tName}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Patter Script */}
-                {r.patter && (
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
-                      <MessageSquare className="w-3 h-3 text-amber-400" />
-                      Patter / Skrypt narracji:
-                    </span>
-                    <p className="text-xs text-zinc-300 italic bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/40 leading-relaxed">
-                      {r.patter}
-                    </p>
-                  </div>
-                )}
+                <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed mb-4">
+                  {r.effect || r.description}
+                </p>
               </div>
 
-              {/* Bottom Action */}
-              <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between">
-                <span className="text-[11px] text-zinc-400 font-mono">
-                  {r.techniques?.length || 0} chwytów w sekwencji
-                </span>
-
-                <button
-                  onClick={() => handlePracticeRoutine(r)}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-rose-600 text-zinc-200 hover:text-white rounded-xl text-xs font-bold border border-zinc-800 hover:border-rose-500 flex items-center gap-1.5 transition active:scale-95"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  Trenuj tę rutynę
-                </button>
+              <div className="pt-3 border-t border-zinc-850 flex items-center justify-between text-xs text-zinc-400">
+                <span>{r.techniques?.length || 0} chwytów</span>
+                <span className="text-amber-400 font-semibold group-hover:underline">Zobacz skrypt →</span>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Routine Creator/Editor Modal */}
-      <RoutineModal
-        isOpen={modalOpen}
-        routine={editingRoutine}
-        onClose={() => setModalOpen(false)}
-        onSaved={fetchRoutines}
-      />
+      {/* Routine Detail / Create Modal */}
+      {(selectedRoutine || showCreateModal) && (
+        <RoutineModal
+          routine={selectedRoutine}
+          isOpen={!!selectedRoutine || showCreateModal}
+          onClose={() => {
+            setSelectedRoutine(null);
+            setShowCreateModal(false);
+          }}
+          onSaved={fetchRoutinesData}
+        />
+      )}
+
     </div>
   );
 }
